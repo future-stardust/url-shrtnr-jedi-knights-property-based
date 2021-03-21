@@ -21,6 +21,7 @@ import edu.kpi.testcourse.rest.dto.UrlCreateResponse;
 import io.micronaut.http.HttpRequest;
 import io.micronaut.http.HttpResponse;
 import io.micronaut.http.HttpStatus;
+import io.micronaut.http.MutableHttpRequest;
 import io.micronaut.http.client.RxHttpClient;
 import io.micronaut.http.client.annotation.Client;
 import io.micronaut.http.client.exceptions.HttpClientResponseException;
@@ -235,6 +236,65 @@ class ApiControllerTest {
     assertThat(result.body()).isNull();
 
     verifyNoInteractions(aliasDao);
+  }
+
+  @Test
+  void redirectToUrlWhenUrlNotExists() {
+    String alias = "test_alias";
+
+    MutableHttpRequest<Object> getUrlRequest = HttpRequest.GET("/r/" + alias);
+
+    HttpResponse<?> result = assertThrows(
+      HttpClientResponseException.class,
+      () -> client.toBlocking().exchange(getUrlRequest))
+      .getResponse();
+
+    assertThat(result).extracting(HttpResponse::status).isEqualTo(HttpStatus.BAD_REQUEST);
+    verify(aliasDao).get(alias);
+  }
+
+  @Test
+  void redirectToUrlWhenUrlExistsAndAuthorized() {
+    String token = authorize();
+
+    String alias = "test_alias";
+    String url = "http://test.com";
+    Alias savedAliasObject = new Alias(alias, url, USERNAME);
+
+    when(aliasDao.get(alias))
+      .thenReturn(savedAliasObject);
+
+    MutableHttpRequest<Object> getUrlRequest = HttpRequest.GET("/r/" + alias)
+      .bearerAuth(token);
+
+    try {
+      HttpResponse<Object> result = client.toBlocking().exchange(getUrlRequest);
+      assertThat(result).extracting(HttpResponse::status).isEqualTo(HttpStatus.OK);
+    } catch (Exception e) {
+      log.error("Error while redirect", e);
+    }
+    verify(aliasDao).get(alias);
+  }
+
+  @Test
+  void redirectToUrlWhenUrlExists() {
+    String alias = "test_alias";
+    String url = "http://test.com";
+    Alias savedAliasObject = new Alias(alias, url, USERNAME);
+
+    when(aliasDao.get(alias))
+      .thenReturn(savedAliasObject);
+
+    MutableHttpRequest<Object> getUrlRequest = HttpRequest.GET("/r/" + alias);
+
+    try {
+      HttpResponse<Object> result = client.toBlocking().exchange(getUrlRequest);
+      assertThat(result).extracting(HttpResponse::status).isEqualTo(HttpStatus.OK);
+    } catch (Exception e) {
+      log.error("Error while redirect", e);
+    }
+
+    verify(aliasDao).get(alias);
   }
 
   private String authorize() {
