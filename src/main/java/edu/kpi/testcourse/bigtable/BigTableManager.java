@@ -1,5 +1,7 @@
 package edu.kpi.testcourse.bigtable;
 
+import io.micronaut.context.annotation.Requires;
+import io.micronaut.context.env.Environment;
 import io.micronaut.discovery.event.ServiceReadyEvent;
 import io.micronaut.runtime.event.annotation.EventListener;
 import io.micronaut.scheduling.annotation.Scheduled;
@@ -16,6 +18,7 @@ import org.slf4j.LoggerFactory;
  * Відповідає за дамп і відновлення данних.
  */
 @Singleton
+@Requires(notEnv = Environment.TEST)
 public class BigTableManager {
 
   private static final Logger logger = LoggerFactory.getLogger(BigTableManager.class);
