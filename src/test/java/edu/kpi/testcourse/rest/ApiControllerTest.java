@@ -18,9 +18,11 @@ import static org.mockito.Mockito.when;
 import edu.kpi.testcourse.bigtable.Alias;
 import edu.kpi.testcourse.bigtable.AliasDao;
 import edu.kpi.testcourse.rest.dto.UrlCreateResponse;
+import io.micronaut.core.type.Argument;
 import io.micronaut.http.HttpRequest;
 import io.micronaut.http.HttpResponse;
 import io.micronaut.http.HttpStatus;
+import io.micronaut.http.MediaType;
 import io.micronaut.http.MutableHttpRequest;
 import io.micronaut.http.client.RxHttpClient;
 import io.micronaut.http.client.annotation.Client;
@@ -33,7 +35,9 @@ import io.micronaut.test.annotation.MockBean;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import javax.inject.Inject;
 import org.junit.jupiter.api.Disabled;
@@ -295,6 +299,54 @@ class ApiControllerTest {
     }
 
     verify(aliasDao).get(alias);
+  }
+
+  @Test
+  void getUserAliasesWhenUnauthorized() {
+    var getAliasesRequest = HttpRequest.GET("/urls")
+      .accept(MediaType.APPLICATION_JSON_TYPE);
+
+    HttpResponse<?> result = assertThrows(
+      HttpClientResponseException.class,
+      () -> client.toBlocking()
+        .exchange(getAliasesRequest, String.class))
+      .getResponse();
+
+    assertThat(result).extracting(HttpResponse::status)
+      .isEqualTo(HttpStatus.UNAUTHORIZED);
+    assertThat(result.body()).isNull();
+
+    verifyNoInteractions(aliasDao);
+  }
+
+  @Test
+  void getUserAliases() {
+    String token = authorize();
+
+    String shorten = "test_alias";
+    String url = "test_url";
+
+    Alias userAlias = new Alias(shorten, url, USERNAME);
+    ArrayList<Alias> userAliases = new ArrayList<>();
+    userAliases.add(userAlias);
+    UrlCreateResponse expected = new UrlCreateResponse(shorten, url, USERNAME);
+
+    MutableHttpRequest<Object> getAliasesRequest = HttpRequest.GET("/urls")
+      .bearerAuth(token)
+      .accept(MediaType.APPLICATION_JSON_TYPE);
+
+    when(aliasDao.getAllByUser(USERNAME))
+      .thenReturn(userAliases);
+
+    HttpResponse<List<UrlCreateResponse>> result = client.toBlocking()
+      .exchange(getAliasesRequest, Argument.listOf(UrlCreateResponse.class));
+
+    assertThat(result).extracting(HttpResponse::status).isEqualTo(HttpStatus.OK);
+    assertThat(result.getBody()).isNotEmpty();
+    assertThat(result.getBody().get()).hasSize(1)
+      .containsExactlyInAnyOrder(expected);
+
+    verify(aliasDao).getAllByUser(USERNAME);
   }
 
   private String authorize() {
