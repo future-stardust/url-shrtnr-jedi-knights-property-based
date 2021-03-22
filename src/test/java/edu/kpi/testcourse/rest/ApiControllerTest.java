@@ -1,29 +1,10 @@
 package edu.kpi.testcourse.rest;
 
-import static edu.kpi.testcourse.rest.MockAuthenticationProvider.LOGIN;
-import static edu.kpi.testcourse.rest.MockAuthenticationProvider.PASSWORD;
-import static edu.kpi.testcourse.rest.MockAuthenticationProvider.USERNAME;
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.atLeastOnce;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.when;
-
 import edu.kpi.testcourse.bigtable.Alias;
 import edu.kpi.testcourse.bigtable.AliasDao;
 import edu.kpi.testcourse.rest.dto.UrlCreateResponse;
 import io.micronaut.core.type.Argument;
-import io.micronaut.http.HttpRequest;
-import io.micronaut.http.HttpResponse;
-import io.micronaut.http.HttpStatus;
-import io.micronaut.http.MediaType;
-import io.micronaut.http.MutableHttpRequest;
+import io.micronaut.http.*;
 import io.micronaut.http.client.RxHttpClient;
 import io.micronaut.http.client.annotation.Client;
 import io.micronaut.http.client.exceptions.HttpClientResponseException;
@@ -33,18 +14,27 @@ import io.micronaut.security.authentication.UsernamePasswordCredentials;
 import io.micronaut.security.token.jwt.render.BearerAccessRefreshToken;
 import io.micronaut.test.annotation.MockBean;
 import io.micronaut.test.extensions.junit5.annotation.MicronautTest;
+import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.inject.Inject;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import javax.inject.Inject;
-import org.junit.jupiter.api.Disabled;
-import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+
+import static edu.kpi.testcourse.rest.MockAuthenticationProvider.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.*;
 
 @MicronautTest
 class ApiControllerTest {
@@ -347,6 +337,98 @@ class ApiControllerTest {
       .containsExactlyInAnyOrder(expected);
 
     verify(aliasDao).getAllByUser(USERNAME);
+  }
+
+  @Test
+  void deleteWhenUnauthorized() {
+    String shorter = "test_alias";
+    var getAliasesRequest = HttpRequest.DELETE("/urls/" + shorter);
+
+    HttpResponse<?> result = assertThrows(
+      HttpClientResponseException.class,
+      () -> client.toBlocking()
+        .exchange(getAliasesRequest, String.class))
+      .getResponse();
+
+    assertThat(result).extracting(HttpResponse::status)
+      .isEqualTo(HttpStatus.UNAUTHORIZED);
+    assertThat(result.body()).isNull();
+
+    verifyNoInteractions(aliasDao);
+  }
+
+  @Test
+  void deleteWhenAliasNotFound() {
+    String token = authorize();
+
+    String shorten = "test_alias";
+    var getAliasesRequest = HttpRequest.DELETE("/urls/" + shorten)
+      .bearerAuth(token);
+
+    HttpResponse<?> result = assertThrows(
+      HttpClientResponseException.class,
+      () -> client.toBlocking()
+        .exchange(getAliasesRequest, String.class))
+      .getResponse();
+
+    assertThat(result).extracting(HttpResponse::status)
+      .isEqualTo(HttpStatus.BAD_REQUEST);
+
+    verify(aliasDao).get(shorten);
+    verify(aliasDao, never()).remove(shorten);
+  }
+
+  @Test
+  void deleteWhenUsernamesDoNotMatch() {
+    String token = authorize();
+
+    String shorten = "test_alias";
+    String url = "test_url";
+
+    Alias userAlias = new Alias(shorten, url, "another_username");
+
+    when(aliasDao.get(shorten))
+      .thenReturn(userAlias);
+
+    var getAliasesRequest = HttpRequest.DELETE("/urls/" + shorten)
+      .bearerAuth(token);
+
+    HttpResponse<?> result = assertThrows(
+      HttpClientResponseException.class,
+      () -> client.toBlocking()
+        .exchange(getAliasesRequest, String.class))
+      .getResponse();
+
+    assertThat(result).extracting(HttpResponse::status)
+      .isEqualTo(HttpStatus.BAD_REQUEST);
+
+    verify(aliasDao).get(shorten);
+    verify(aliasDao, never()).remove(shorten);
+  }
+
+  @Test
+  void delete() {
+    String token = authorize();
+
+    String shorten = "test_alias";
+    String url = "test_url";
+
+    Alias userAlias = new Alias(shorten, url, USERNAME);
+
+    when(aliasDao.get(shorten))
+      .thenReturn(userAlias);
+
+    var getAliasesRequest = HttpRequest.DELETE("/urls/" + shorten)
+      .bearerAuth(token);
+
+    HttpResponse<String> result = client.toBlocking()
+      .exchange(getAliasesRequest, String.class);
+
+    assertThat(result).extracting(HttpResponse::status)
+      .isEqualTo(HttpStatus.OK);
+
+    verify(aliasDao).get(shorten);
+    verify(aliasDao).remove(shorten);
   }
 
   private String authorize() {
