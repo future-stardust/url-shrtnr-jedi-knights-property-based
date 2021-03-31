@@ -59,4 +59,13 @@ public class UrlCreateResponse {
   public int hashCode() {
     return Objects.hash(shorten, url, username);
   }
+
+  @Override
+  public String toString() {
+    return "UrlCreateResponse{" +
+      "shorten='" + shorten + '\'' +
+      ", url='" + url + '\'' +
+      ", username='" + username + '\'' +
+      '}';
+  }
 }
